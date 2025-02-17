@@ -11,7 +11,7 @@ def get_coordinates(event, x, y, flags, param):
         cv2.imshow("Selecciona el polígono", frame)
 
 # Cargar una imagen o frame desde la cámara
-frame = cv2.imread(r'C:/Users/User/Desktop/Screenshot_1.png')  # O usa frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+frame = cv2.imread(r'C:/Users/User/Desktop/Screenshot.png')  # O usa frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
 
 # Crear una ventana y asignar la función de clic
 cv2.namedWindow("Selecciona el polígono")

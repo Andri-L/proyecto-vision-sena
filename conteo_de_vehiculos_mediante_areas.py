@@ -13,7 +13,7 @@ from datetime import datetime
 # =============================
 # Estas variables se pueden editar en el código.
 streaming_url = 'http://192.168.173.144:8080/shot.jpg'
-video_path = r'C:/Users/User/Desktop/demo.mp4'  # Ruta al video (archivo local)
+video_path = r'C:/Users/User/Desktop/video_dron.mp4'  # Ruta al video (archivo local)
 
 # -----------------------------
 # Selección de modo
@@ -100,8 +100,8 @@ try:
             # Definir los polígonos con las coordenadas proporcionadas sin transformación:
             # Polígono Rojo (nuevas coordenadas):
             poligono1_coords = np.array([(859, 274), (1051, 365), (1000, 283)], np.int32)
-            # Polígono Verde (se mantiene el original):
-            poligono2_coords = np.array([(319, 715), (1275, 269), (1277, 449), (884, 716)], np.int32)
+            # Polígono Verde (SE HA MODIFICADO):
+            poligono2_coords = np.array([(458, 377), (624, 378), (630, 395), (454, 396)], np.int32)
             polygons = [poligono1_coords, poligono2_coords]
 
             zones = [sv.PolygonZone(polygon=polygon) for polygon in polygons]
