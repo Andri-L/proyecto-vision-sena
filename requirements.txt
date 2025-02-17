@@ -4,3 +4,4 @@ filterpy
 scipy
 numpy
 lap
+supervision 
