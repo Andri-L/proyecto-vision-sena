@@ -1,3 +1,4 @@
+import math
 import cv2
 import numpy as np
 import urllib.request
@@ -7,17 +8,14 @@ import time
 import ctypes
 import pandas as pd
 from datetime import datetime
+from tracker import Tracker
 
 # =============================
 # CONFIGURACIÓN DE FUENTE
 # =============================
-# Estas variables se pueden editar en el código.
 streaming_url = 'http://192.168.173.144:8080/shot.jpg'
 video_path = r'C:/Users/User/Desktop/video_dron.mp4'  # Ruta al video (archivo local)
 
-# -----------------------------
-# Selección de modo
-# -----------------------------
 print("Seleccione el modo de operación:")
 print("1: Recibir imágenes vía streaming")
 print("2: Ejecutar video")
@@ -48,23 +46,26 @@ vehicle_mapping = {
     "bus": "bus"
 }
 
+# Se seleccionan únicamente las clases de vehículo de interés
 vehicle_class_ids = {cls_id for cls_id, cls_name in model.names.items() if cls_name in vehicle_mapping}
-conf_threshold = 0.5
+conf_threshold = 0.4
 
 colors = sv.ColorPalette.from_hex(['#FF0000', '#00FF00'])
 
 zones = None
 zone_annotators = None
 box_annotators = None
-# Los contadores serán acumulativos (no se reinician cada frame)
 zone_vehicle_counts = {}
 
 # Lista para guardar los registros de cada frame
 log_entries = []
 
-# Variables para tracking
-tracked_objects = {}  # Diccionario: id -> { "centroid": (x,y), "class": str, "counted_zones": set() }
-next_object_id = 0
+# =============================
+# INICIALIZAR TRACKER Y VARIABLES PARA CONTAR ZONAS
+# =============================
+tracker = Tracker()
+# Este diccionario almacenará para cada objeto (por su id) las zonas en las que ya fue contado
+object_zones_counted = {}
 
 # Configurar DPI awareness en Windows (opcional)
 try:
@@ -97,10 +98,8 @@ try:
 
         # Inicializar zonas (se definen una sola vez)
         if zones is None:
-            # Definir los polígonos con las coordenadas proporcionadas sin transformación:
-            # Polígono Rojo (nuevas coordenadas):
+            # Definir los polígonos con las coordenadas proporcionadas
             poligono1_coords = np.array([(859, 274), (1051, 365), (1000, 283)], np.int32)
-            # Polígono Verde (SE HA MODIFICADO):
             poligono2_coords = np.array([(458, 377), (624, 378), (630, 395), (454, 396)], np.int32)
             polygons = [poligono1_coords, poligono2_coords]
 
@@ -132,56 +131,52 @@ try:
             detections = sv.Detections(xyxy=np.empty((0, 4)), confidence=np.empty((0,)), class_id=np.empty((0,)))
 
         # Extraer información de detecciones para el tracker
-        det_info = []
+        det_boxes = []
+        det_info = []  # Lista de tuplas (centro, bbox, clase)
         if detections is not None and len(detections.xyxy) > 0:
             for i in range(len(detections.xyxy)):
-                bbox = detections.xyxy[i]  # [x1, y1, x2, y2]
-                centroid = ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+                x1, y1, x2, y2 = detections.xyxy[i]
+                w, h = x2 - x1, y2 - y1
+                det_boxes.append([int(x1), int(y1), int(w), int(h)])
+                centroid = ((x1 + x2) / 2, (y1 + y2) / 2)
                 cls_id = int(detections.class_id[i])
                 cls_name = model.names[cls_id]
-                det_info.append((centroid, bbox, cls_name))
+                det_info.append((centroid, [int(x1), int(y1), int(w), int(h)], cls_name))
 
-        # --- ACTUALIZACIÓN DEL TRACKER ---
-        updated_tracks = {}
-        assigned_indices = set()
-        # Actualizar tracks existentes
-        for track_id, track in tracked_objects.items():
-            min_dist = float('inf')
-            best_index = None
-            for i, (centroid, bbox, cls_name) in enumerate(det_info):
-                dist = np.linalg.norm(np.array(centroid) - np.array(track["centroid"]))
-                if dist < min_dist:
-                    min_dist = dist
-                    best_index = i
-            if best_index is not None and min_dist < 50:  # Umbral de asociación
-                updated_tracks[track_id] = {
-                    "centroid": det_info[best_index][0],
-                    "class": det_info[best_index][2],
-                    "counted_zones": track["counted_zones"]
-                }
-                assigned_indices.add(best_index)
-        # Agregar nuevos tracks para detecciones sin asignar
-        for i, (centroid, bbox, cls_name) in enumerate(det_info):
-            if i not in assigned_indices:
-                updated_tracks[next_object_id] = {
-                    "centroid": centroid,
-                    "class": cls_name,
-                    "counted_zones": set()
-                }
-                next_object_id += 1
+        # Aplicar el tracker a las cajas detectadas
+        tracked_objects = tracker.tracker(det_boxes)
 
-        tracked_objects = updated_tracks
+        # Dibujar las cajas y los IDs asignados por el tracker
+        for idx, obj in enumerate(tracked_objects):
+            x, y, w, h, obj_id = obj
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(frame, f'ID: {obj_id}', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        # --- ACTUALIZAR CONTADORES POR ZONA A PARTIR DEL TRACKING ---
-        for track in tracked_objects.values():
-            # Revisar en cada zona si el objeto está presente y no fue contado previamente
+        # -----------------------------
+        # ACTUALIZAR CONTADORES POR ZONA A PARTIR DEL TRACKING
+        # -----------------------------
+        # Se asume que el orden de las detecciones en det_boxes (y det_info) corresponde al orden de tracked_objects
+        for idx, obj in enumerate(tracked_objects):
+            x, y, w, h, obj_id = obj
+            center = (x + w // 2, y + h // 2)
+            # Inicializar el conjunto de zonas ya contadas para este objeto si aún no existe
+            if obj_id not in object_zones_counted:
+                object_zones_counted[obj_id] = set()
+
+            # Obtener el tipo de vehículo a partir de la detección (si está disponible)
+            if idx < len(det_info):
+                vehicle_class = det_info[idx][2]
+                vehicle_type = vehicle_mapping.get(vehicle_class, None)
+            else:
+                vehicle_type = None
+
+            # Verificar en qué zona se encuentra el centro del objeto
             for zone_idx, zone in enumerate(zones):
-                if cv2.pointPolygonTest(zone.polygon, (track["centroid"][0], track["centroid"][1]), False) >= 0:
-                    if zone_idx not in track["counted_zones"]:
-                        vehicle_type = vehicle_mapping.get(track["class"], None)
+                if cv2.pointPolygonTest(zone.polygon, center, False) >= 0:
+                    if zone_idx not in object_zones_counted[obj_id]:
                         if vehicle_type is not None:
                             zone_vehicle_counts[zone_idx][vehicle_type] += 1
-                        track["counted_zones"].add(zone_idx)
+                        object_zones_counted[obj_id].add(zone_idx)
 
         # -----------------------------
         # DIBUJO DE ANOTACIONES Y CONTADORES EN CADA ZONA
@@ -198,19 +193,16 @@ try:
             text_position = [(10, 30), (width - 250, 30)][idx]
             zone_name = ["Roja", "Verde"][idx]
 
-            # Calcular dimensiones de la caja de texto
             text_size = cv2.getTextSize(f"Zona {zone_name}:", cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
             rect_x, rect_y = text_position
             rect_width = max(text_size[0], 200)
             rect_height = text_size[1] * (len(text_zone_lines) + 2) + 10
 
-            # Dibujar recuadro de fondo semitransparente para el texto
             overlay = frame.copy()
             alpha = 0.5  # Nivel de transparencia
             cv2.rectangle(overlay, (rect_x - 5, rect_y - 20), (rect_x + rect_width + 5, rect_y + rect_height), (0, 0, 0), -1)
             cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-            # Dibujar el título y cada línea de texto (con salto de línea)
             cv2.putText(frame, f"Zona {zone_name}:", text_position, cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             for i, line in enumerate(text_zone_lines):
                 cv2.putText(frame, line, (text_position[0], text_position[1] + 25 * (i + 1)),
