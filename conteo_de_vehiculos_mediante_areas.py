@@ -8,7 +8,74 @@ import time
 import ctypes
 import pandas as pd
 from datetime import datetime
-from tracker import Tracker
+
+# =============================
+# CLASE TRACKER CON CONSERVACIÓN DE ID
+# =============================
+class Tracker:
+    def __init__(self, distance_threshold=40, max_frames_missing=20):
+        """
+        distance_threshold: distancia máxima en píxeles para asociar detecciones.
+        max_frames_missing: número máximo de frames en los que un objeto puede no detectarse antes de eliminarse.
+        """
+        self.center_points = {}  # Almacena {id: (x_center, y_center)}
+        self.disappeared = {}    # Almacena {id: contador de frames sin detectar}
+        self.id_count = 1
+        self.distance_threshold = distance_threshold
+        self.max_frames_missing = max_frames_missing
+
+    def tracker(self, boxes):
+        """
+        Recibe una lista de cajas [x, y, w, h] y retorna una lista con la información de cada objeto: [x, y, w, h, id]
+        Conserva el ID durante max_frames_missing si no se vuelve a detectar.
+        """
+        objects = []
+        matched_ids = set()
+
+        # Si no hay detecciones, incrementar contador para todos y eliminar si se supera el umbral
+        if len(boxes) == 0:
+            for id in list(self.center_points.keys()):
+                self.disappeared[id] = self.disappeared.get(id, 0) + 1
+                if self.disappeared[id] > self.max_frames_missing:
+                    del self.center_points[id]
+                    del self.disappeared[id]
+            return objects
+
+        # Procesar cada detección
+        for box in boxes:
+            x, y, w, h = box
+            x_center = x + w // 2
+            y_center = y + h // 2
+
+            matched = False
+            # Revisar si coincide con un objeto ya rastreado
+            for id, point in self.center_points.items():
+                distance = math.hypot(x_center - point[0], y_center - point[1])
+                if distance < self.distance_threshold:
+                    # Se actualiza el centro y se reinicia el contador de frames sin detectar
+                    self.center_points[id] = (x_center, y_center)
+                    self.disappeared[id] = 0
+                    objects.append([x, y, w, h, id])
+                    matched_ids.add(id)
+                    matched = True
+                    break
+
+            # Si no se encontró coincidencia, se crea un nuevo ID para la detección
+            if not matched:
+                self.center_points[self.id_count] = (x_center, y_center)
+                self.disappeared[self.id_count] = 0
+                objects.append([x, y, w, h, self.id_count])
+                self.id_count += 1
+
+        # Incrementar contador para los objetos que no se emparejaron en este frame
+        for id in list(self.center_points.keys()):
+            if id not in matched_ids:
+                self.disappeared[id] = self.disappeared.get(id, 0) + 1
+                if self.disappeared[id] > self.max_frames_missing:
+                    del self.center_points[id]
+                    del self.disappeared[id]
+
+        return objects
 
 # =============================
 # CONFIGURACIÓN DE FUENTE
@@ -48,7 +115,7 @@ vehicle_mapping = {
 
 # Se seleccionan únicamente las clases de vehículo de interés
 vehicle_class_ids = {cls_id for cls_id, cls_name in model.names.items() if cls_name in vehicle_mapping}
-conf_threshold = 0.4
+conf_threshold = 0.5
 
 colors = sv.ColorPalette.from_hex(['#FF0000', '#00FF00'])
 
@@ -63,8 +130,8 @@ log_entries = []
 # =============================
 # INICIALIZAR TRACKER Y VARIABLES PARA CONTAR ZONAS
 # =============================
-tracker = Tracker()
-# Este diccionario almacenará para cada objeto (por su id) las zonas en las que ya fue contado
+tracker = Tracker(distance_threshold=25, max_frames_missing=10)
+# Diccionario para llevar el registro de las zonas ya contadas por cada objeto
 object_zones_counted = {}
 
 # Configurar DPI awareness en Windows (opcional)
@@ -146,7 +213,7 @@ try:
         # Aplicar el tracker a las cajas detectadas
         tracked_objects = tracker.tracker(det_boxes)
 
-        # Dibujar las cajas y los IDs asignados por el tracker
+        # Dibujar las cajas y mostrar el ID asignado por el tracker
         for idx, obj in enumerate(tracked_objects):
             x, y, w, h, obj_id = obj
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -219,7 +286,6 @@ try:
         if cv2.waitKey(1) == ord('q'):
             break
 
-        time.sleep(0.1)
 
 except Exception as e:
     print("Error:", e)
