@@ -1,0 +1,30 @@
+[33mcommit 33e1d8ee3472e015f7e0bfb9c8d86ba41dc30e21[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mliseth[m[33m)[m
+Author: Andri-L <andreslondo255@gmail.com>
+Date:   Thu Feb 20 14:47:33 2025 -0500
+
+    liseth files working
+
+[33mcommit a4cb0e11b5edc75cc8de128a79aaee41aa1e8f22[m[33m ([m[1;31morigin/rastreador[m[33m, [m[1;32mrastreador[m[33m)[m
+Author: Andri-L <andreslondo255@gmail.com>
+Date:   Wed Feb 19 21:58:59 2025 -0500
+
+    feat: add a frame saver, for example when a vehicle lost de detection of the model for one second now it will save the same id and no deleting instanly, it's possible to modify trought a variable
+
+[33mcommit 4d02de1519dc208d7724f9cd6fb26e9132692362[m
+Author: Andri-L <andreslondo255@gmail.com>
+Date:   Wed Feb 19 18:44:15 2025 -0500
+
+    feat: now the tracker can count the vehicles but it is really quite
+    inaccurate because of model or image quality.
+
+[33mcommit 6a5c067ce44b91c5b470e89a9e8dd7de9695a65b[m[33m ([m[1;31morigin/master[m[33m, [m[1;32mmaster[m[33m)[m
+Author: Andri-L <andreslondo255@gmail.com>
+Date:   Mon Feb 17 16:04:20 2025 -0500
+
+    Update of the code polygons to adapt it to the new drone video.
+
+[33mcommit 998acd33f07afaf693f3bc98f6be03a5f39afd1c[m
+Author: Andri-L <andreslondo255@gmail.com>
+Date:   Thu Feb 13 16:22:49 2025 -0500
+
+    first commit
