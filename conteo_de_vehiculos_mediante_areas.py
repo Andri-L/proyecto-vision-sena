@@ -103,12 +103,12 @@ else:
 # =============================
 # CONFIGURACIÓN INICIAL DEL MODELO Y ZONAS
 # =============================
-model = YOLO('yolov8s.pt')
+model = YOLO(r'C:\Users\User\Documents\TERCER TRIMESTRE\JAIR\proyecto\yolomaestro.pt')
 
 vehicle_mapping = {
     "car": "auto",
     "truck": "camion",
-    "motorcycle": "moto",
+    "motorbike": "moto",
     "bicycle": "bicicleta",
     "bus": "bus"
 }
