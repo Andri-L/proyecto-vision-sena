@@ -123,7 +123,7 @@ vehicle_mapping = {
     "truck": "camion",
     "motorbike": "moto",
     "bicycle": "bicicleta",
-    "bus": "bus"
+    "bus": "bus" 
 }
 
 # Se filtran únicamente las clases de vehículo de interés
@@ -137,8 +137,8 @@ zone_annotators = None
 box_annotators = None
 zone_vehicle_counts = {}
 
-# Lista para guardar los registros de cada frame
-log_entries = []
+# Lista para guardar los registros de nuevos eventos de detección de vehículo
+vehicle_log = []
 
 # Inicializar el tracker y el registro de zonas ya contadas para cada objeto
 tracker_state = initialize_tracker(distance_threshold=25, max_frames_missing=10)
@@ -174,8 +174,8 @@ try:
         # Inicializar zonas solo una vez
         if zones is None:
             # Definir los polígonos con las coordenadas proporcionadas
-            poligono1_coords = np.array([(710, 409), (838, 406), (845, 417), (712, 419)], np.int32) # red
-            poligono2_coords = np.array([(458, 377), (624, 378), (630, 395), (454, 396)], np.int32) # green
+            poligono1_coords = np.array([(710, 409), (838, 406), (845, 417), (712, 419)], np.int32)  # zona roja
+            poligono2_coords = np.array([(458, 377), (624, 378), (630, 395), (454, 396)], np.int32)  # zona verde
             polygons = [poligono1_coords, poligono2_coords]
 
             zones = [sv.PolygonZone(polygon=polygon) for polygon in polygons]
@@ -190,7 +190,7 @@ try:
                 for idx, zone in enumerate(zones)
             ]
             box_annotators = [sv.BoxAnnotator(color=colors.by_idx(idx), thickness=2) for idx in range(len(polygons))]
-            # Inicializar contadores acumulativos en cada zona
+            # Inicializar contadores acumulativos en cada zona (opcional para visualización)
             zone_vehicle_counts = {idx: {vehicle_mapping[veh]: 0 for veh in vehicle_mapping} for idx in range(len(zones))}
 
         # Detección con YOLOv8
@@ -226,11 +226,11 @@ try:
             cv2.putText(frame, f'ID: {obj_id}', (x, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        # Actualizar contadores por zona basados en el tracking
+        # Actualizar contadores por zona basados en el tracking y registrar nuevos eventos
         for idx, obj in enumerate(tracked_objects):
             x, y, w, h, obj_id = obj
             center = (x + w // 2, y + h // 2)
-            # Registrar las zonas ya contadas para cada objeto
+            # Inicializar el registro de zonas contadas para cada objeto
             if obj_id not in object_zones_counted:
                 object_zones_counted[obj_id] = set()
 
@@ -245,9 +245,19 @@ try:
             for zone_idx, zone in enumerate(zones):
                 if cv2.pointPolygonTest(zone.polygon, center, False) >= 0:
                     if zone_idx not in object_zones_counted[obj_id]:
-                        if vehicle_type is not None:
-                            zone_vehicle_counts[zone_idx][vehicle_type] += 1
+                        # Marcar que este objeto ya fue contado en esta zona
                         object_zones_counted[obj_id].add(zone_idx)
+                        if vehicle_type is not None:
+                            # Actualizar contador acumulado (opcional para visualización)
+                            zone_vehicle_counts[zone_idx][vehicle_type] += 1
+                            # Registrar el evento con el timestamp exacto y velocidad por defecto
+                            vehicle_log.append({
+                                "Track ID": obj_id,
+                                "Vehicle Type": vehicle_type,
+                                "Speed (km/h)": 0.0,  # Valor de velocidad placeholder
+                                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "Zone": "Roja" if zone_idx == 0 else "Verde"
+                            })
 
         # Dibujar anotaciones y contadores en cada zona
         for idx, (zone, zone_annotator, box_annotator) in enumerate(zip(zones, zone_annotators, box_annotators)):
@@ -279,14 +289,6 @@ try:
                 cv2.putText(frame, line, (text_position[0], text_position[1] + 25 * (i + 1)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
-        # Registrar el log con la fecha/hora y resumen de contadores por zona
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        detections_summary = "; ".join(
-            [f"Zona {['Roja','Verde'][i]}: " + ", ".join([f"{k}={v}" for k, v in zone_vehicle_counts[i].items()])
-             for i in zone_vehicle_counts]
-        )
-        log_entries.append({"timestamp": timestamp, "detections": detections_summary})
-
         cv2.imshow("IP Camera - Conteo de Vehículos por Área", frame)
         if cv2.waitKey(1) == ord('q'):
             break
@@ -298,7 +300,7 @@ if source_mode == "video":
     cap.release()
 cv2.destroyAllWindows()
 
-# Exportar el log a un archivo CSV
-df_log = pd.DataFrame(log_entries)
-df_log.to_csv("registro_frames.csv", index=False)
-print("Registro exportado a 'registro_frames.csv'")
+# Exportar el registro de vehículos a un archivo CSV al finalizar la ejecución
+df_vehicle_log = pd.DataFrame(vehicle_log)
+df_vehicle_log.to_csv("registro_vehiculos.csv", index=False)
+print("Registro exportado a 'registro_vehiculos.csv'")

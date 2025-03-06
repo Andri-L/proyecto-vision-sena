@@ -1,0 +1,11 @@
+Track ID,Vehicle Type,Speed (km/h),Timestamp,Zone
+5,moto,0.0,2025-03-06 15:15:08,Verde
+4,moto,0.0,2025-03-06 15:15:11,Verde
+1,auto,0.0,2025-03-06 15:15:26,Verde
+3,auto,0.0,2025-03-06 15:15:36,Verde
+12,auto,0.0,2025-03-06 15:15:56,Verde
+2,moto,0.0,2025-03-06 15:16:02,Verde
+14,auto,0.0,2025-03-06 15:16:23,Verde
+16,camion,0.0,2025-03-06 15:16:31,Verde
+21,auto,0.0,2025-03-06 15:16:46,Verde
+25,auto,0.0,2025-03-06 15:16:56,Verde
