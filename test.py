@@ -7,7 +7,7 @@ from ultralytics import YOLO
 import time
 import ctypes
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 
 def initialize_tracker(distance_threshold=40, max_frames_missing=20):
@@ -97,16 +97,16 @@ def update_tracker(tracker_state, boxes):
 
 # CONFIGURACIÓN DE FUENTE (streaming o video)
 streaming_url = 'http://192.168.173.144:8080/shot.jpg'
-video_path = r'/content/video_dron.mp4'
+video_path = r'C:/Users/User/Desktop/video_dron.mp4'
 
 print("Seleccione el modo de operación:")
 print("1: Recibir imágenes vía streaming")
 print("2: Ejecutar video")
 modo = input("Ingrese 1 o 2: ")
 
-# Guardar siempre el video procesado
-guardar_video = True
-print("El video procesado será guardado automáticamente")
+# Configuración para guardar el video procesado
+print("¿Desea guardar el video procesado? (s/n):")
+guardar_video = input().lower() == 's'
 
 source_mode = ""
 fps = 30.0  # Valor predeterminado de FPS
@@ -119,20 +119,16 @@ if modo == "2":
         print("No se pudo abrir el video. Se usará el modo streaming por defecto.")
         source_mode = "streaming"
     else:
-        # Obtener FPS y total de frames del video original
+        # Obtener FPS del video original
         fps = cap.get(cv2.CAP_PROP_FPS)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        video_duration = total_frames / fps
-        print(f"Video original: {total_frames} frames, {fps} FPS, duración: {video_duration:.2f} segundos")
 elif modo == "1":
     source_mode = "streaming"
-    print("Modo streaming: FPS será calculado en tiempo real")
 else:
     print("Entrada no válida. Se usará el modo streaming por defecto.")
     source_mode = "streaming"
 
 # CONFIGURACIÓN INICIAL DEL MODELO Y ZONAS
-model = YOLO('/content/yolomaestro.pt')
+model = YOLO(r'C:\Users\User\Documents\SENA\TERCER_TRIMESTRE\JAIR\proyecto_conteo_mediante_areas\yolomaestro.pt')
 
 vehicle_mapping = {
     "car": "auto",
@@ -172,16 +168,10 @@ except Exception:
 # Nombre del archivo de salida para el video procesado
 output_video_path = "video_procesado.mp4"
 
-# Variables para cálculo de tiempo preciso
-start_time = datetime.now()
-start_process_time = time.time()
-last_fps_check_time = start_process_time
-frames_since_check = 0
-actual_fps = fps  # Inicializado con el FPS del video, se ajustará durante el procesamiento
-
 # BUCLE PRINCIPAL DE PROCESAMIENTO
 try:
     frame_count = 0
+    inicio = time.time()
     
     while True:
         # Capturar el frame según el modo seleccionado
@@ -199,8 +189,8 @@ try:
 
         height, width = frame.shape[:2]
         
-        # Configurar el escritor de video en el primer frame
-        if video_writer is None:
+        # Configurar el escritor de video en el primer frame si se requiere guardar
+        if guardar_video and video_writer is None:
             # Usar codec h264 para compatibilidad
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
@@ -254,20 +244,7 @@ try:
         # Actualizar el tracker con las cajas detectadas
         tracked_objects = update_tracker(tracker_state, det_boxes)
 
-        # Calcular el tiempo de video basado en el frame actual y los FPS originales
-        video_time = frame_count / fps if source_mode == "video" else (time.time() - start_process_time)
-        
-        # Calcular el tiempo real transcurrido desde el inicio del procesamiento
-        process_time = time.time() - start_process_time
-        
-        # Actualizar cálculo de FPS real cada segundo para modo streaming
-        frames_since_check += 1
-        if source_mode == "streaming" and time.time() - last_fps_check_time >= 1.0:
-            actual_fps = frames_since_check / (time.time() - last_fps_check_time)
-            frames_since_check = 0
-            last_fps_check_time = time.time()
-        
-        # Dibujar las cajas y mostrar el ID asignado a cada objeto en el frame (para el video final)
+        # Dibujar las cajas y mostrar el ID asignado a cada objeto
         for obj in tracked_objects:
             x, y, w, h, obj_id = obj
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
@@ -296,21 +273,18 @@ try:
                         # Marcar que este objeto ya fue contado en esta zona
                         object_zones_counted[obj_id].add(zone_idx)
                         if vehicle_type is not None:
-                            # Actualizar contador acumulado
+                            # Actualizar contador acumulado (opcional para visualización)
                             zone_vehicle_counts[zone_idx][vehicle_type] += 1
-                            # Crear timestamp basado en el tiempo de video
-                            event_timestamp = start_time + timedelta(seconds=video_time)
                             # Registrar el evento con el timestamp exacto y velocidad por defecto
                             vehicle_log.append({
                                 "Track ID": obj_id,
                                 "Vehicle Type": vehicle_type,
                                 "Speed (km/h)": 0.0,  # Valor de velocidad placeholder
-                                "Timestamp": event_timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
-                                "Video Time (s)": f"{video_time:.3f}",
+                                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 "Zone": "Roja" if zone_idx == 0 else "Verde"
                             })
 
-        # Dibujar anotaciones y contadores en cada zona (para el video final)
+        # Dibujar anotaciones y contadores en cada zona
         for idx, (zone, zone_annotator, box_annotator) in enumerate(zip(zones, zone_annotators, box_annotators)):
             mask = zone.trigger(detections=detections)
             detections_in_zone = detections[mask]
@@ -320,7 +294,7 @@ try:
 
             # Preparar el texto con los contadores acumulativos
             text_zone_lines = [f"{k}: {v}" for k, v in zone_vehicle_counts[idx].items()]
-            text_position = [(10, 30), (width - 300, 30)][idx]
+            text_position = [(10, 30), (width - 1100, 30)][idx]
             zone_name = ["Roja", "Verde"][idx]
 
             text_size = cv2.getTextSize(f"Zona {zone_name}:", cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
@@ -331,7 +305,7 @@ try:
             overlay = frame.copy()
             alpha = 0.5  # Nivel de transparencia para el rectángulo de fondo
             cv2.rectangle(overlay, (rect_x - 5, rect_y - 25),
-                          (rect_x + rect_width + 5, rect_y + rect_height + 10), (0, 0, 0), -1)
+                          (rect_x + rect_width - 50, rect_y + rect_height + 10), (0, 0, 0), -1)
             cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
             cv2.putText(frame, f"Zona {zone_name}:", text_position,
@@ -340,45 +314,33 @@ try:
                 cv2.putText(frame, line, (text_position[0], text_position[1] + 25 * (i + 1)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 
-        # Agregar contador de frames y tiempo de video preciso
+        # Agregar contador de frames y tiempo de procesamiento
         frame_count += 1
+        tiempo_actual = time.time() - inicio
+        cv2.putText(frame, f"Frames: {frame_count} | Tiempo: {tiempo_actual:.2f}s", 
+                   (10, height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
-        # Mostrar en el frame el tiempo de video y el tiempo de procesamiento
-        info_text = f"Frame: {frame_count} | Tiempo video: {video_time:.2f}s | Tiempo proceso: {process_time:.2f}s"
-        cv2.putText(frame, info_text, (10, height - 10), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
-        # Escribir el frame en el video de salida
-        video_writer.write(frame)
-        
-        # Reemplazado la visualización en pantalla por un simple log de progreso
-        if frame_count % 30 == 0:  # Cada segundo de video aproximadamente
-            if source_mode == "video":
-                percent_complete = (frame_count / total_frames * 100) if 'total_frames' in locals() else 0
-                print(f"Procesados {frame_count} frames | Tiempo video: {video_time:.2f}s | Progreso: {percent_complete:.1f}%")
-            else:
-                print(f"Procesados {frame_count} frames | FPS actual: {actual_fps:.1f} | Tiempo proceso: {process_time:.2f}s")
+        # Escribir el frame en el video de salida si está habilitado
+        if guardar_video and video_writer is not None:
+            video_writer.write(frame)
+
+        cv2.imshow("IP Camera - Conteo de Vehículos por Área", frame)
+        if cv2.waitKey(1) == ord('q'):
+            break
 
 except Exception as e:
     print("Error:", e)
 finally:
-    # Calcular tiempo total de procesamiento
-    total_process_time = time.time() - start_process_time
-    
     # Liberar recursos
-    if source_mode == "video" and 'cap' in locals() and cap is not None:
-        total_video_time = frame_count / fps
-        print(f"\nProcesamiento completado:")
-        print(f"Frames procesados: {frame_count}")
-        print(f"Duración del video: {total_video_time:.2f} segundos")
-        print(f"Tiempo total de procesamiento: {total_process_time:.2f} segundos")
-        print(f"Factor de tiempo real: {total_process_time/total_video_time:.2f}x")
+    if source_mode == "video":
         cap.release()
     
-    # Cerrar el escritor de video
-    if video_writer is not None:
+    # Cerrar el escritor de video si está activo
+    if guardar_video and video_writer is not None:
         video_writer.release()
         print(f"Video procesado guardado en: {os.path.abspath(output_video_path)}")
+        
+    cv2.destroyAllWindows()
 
 # Exportar el registro de vehículos a un archivo CSV al finalizar la ejecución
 df_vehicle_log = pd.DataFrame(vehicle_log)
